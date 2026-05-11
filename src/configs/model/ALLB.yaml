@@ -1,0 +1,36 @@
+# UnifiedMPA 模型配置文件 (融合全局分布对齐与细粒度兴趣对齐)
+
+# === 1. 基础维度与架构设定 ===
+embedding_size: 64         # 最终 User/Item 输出的 Embedding 维度 (拼接后的总长度为 128)
+feat_embed_dim: 64         # 原始模态特征投影到隐空间的维度 (MLP 输出维度)
+dim_latent: 64             # 单路 GCN (ID/V/T) 的隐向量维度，建议与 embedding_size 保持一致
+
+# === 2. 图传播相关参数 ===
+# 用户-物品交互图 (User-Item Bipartite Graph)
+n_layers: 2                # 基础 GCN 执行协作过滤传播的层数 (ID偏好 + 模态特征演化)
+
+# 物品-物品相似度图 (Item-Item kNN Graph)
+knn_k: 10                  # 构建物品多模态图时，每个物品连接的最近邻居数
+mm_image_weight: 0.1       # 融合视觉(V)与文本(T)相似度邻接矩阵时，视觉部分的权重 (0.1 表示偏重文本)
+n_mm_layers: 1             # 在物品相似度图上的特征传播层数 (对应代码中的 self.n_layers)
+
+# === 3. 训练与损失函数优化 ===
+learning_rate: [0.0001]
+dropout: 0.2               # 丢弃率，用于防止 GCN 过拟合
+reg_weight: [0.001]        # L2 正则化权重，作用于 ID 偏好向量、模态权重参数 weight_u
+
+# 对齐任务控制开关 (Ablation 控制)
+use_global_align: True     # 是否开启全局分布对齐 (TMPA 策略)
+use_local_align: True      # 是否开启细粒度兴趣对齐 (MADH 策略)
+
+# 混合对齐权重 (Hybrid Alignment Weight)
+# 该参数在开启的对齐模块上生效，控制对齐损失在总损失中的比重
+align_weight: [0.1]
+
+# === 4. 其他组件参数 ===
+temp: 0.5                  # 温度参数 (用于内部逻辑扩展)
+dist_dim: 64               # 统计对齐空间的维度 (通常等于 dim_latent)
+
+# === 5. 超参数搜索设置 ===
+# 建议重点搜索对齐权重和学习率，这是融合模型性能的关键
+hyper_parameters: ["reg_weight", "learning_rate", "align_weight"]

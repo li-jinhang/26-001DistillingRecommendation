@@ -1,0 +1,20 @@
+# 基础 Embedding 维度 (对应代码中的 dim_latent)
+embedding_size: 64
+feat_embed_dim: 64
+# KNN 物品图构建相关参数
+knn_k: 10                  # KNN 图中每个节点的邻居数
+mm_image_weight: 0.1       # 融合 V 和 T 邻接矩阵时视觉特征的权重
+n_mm_layers: 1             # KNN 图上的传播层数 (对应 buildItemGraph)
+# 基础 GCN 层数
+n_layers: 2                # 各模态 GCN 演化的层数
+# 训练相关参数
+learning_rate: [0.0001]
+reg_weight: [1e-05]        # L2 正则化权重 (包含 ID 偏好和权重参数)
+dropout: 0.2               # 丢弃率
+# 细粒度对齐参数 (Fine-grained Alignment)
+align_weight: [0.01]        # InfoNCE 对比损失的权重
+temp: [0.5]                  # 对比学习的温度系数 (控制对齐的区分度)0.5
+kd_weight: 0.1
+# 超参数搜索列表
+# align_weight 对应细粒度对比损失强度，temp 对应相似度平滑度
+hyper_parameters: ["reg_weight", "learning_rate", "align_weight", "temp"]

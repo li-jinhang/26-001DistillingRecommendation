@@ -1,0 +1,22 @@
+# 模型基础维度
+embedding_size: 64
+feat_embed_dim: 64
+
+# 一、 初始化与数据准备
+knn_k: [10]              # 修改：改为列表格式
+alpha_v: [0.5]           # 修改：改为列表格式
+
+# 四、 多模态融合与双图传播
+L_ii: 2                # 如果不放在 hyper_parameters 里，可以保持原样
+L_ui: 3
+
+# 五、 联合损失优化
+lambda_mm: [0.1]         # 修改：改为列表格式
+reg_weight: [0.001]
+
+# 训练相关配置
+learning_rate: [0.0001]
+dropout: [0.2]
+
+# 核心：这里列出的键，在上方必须全部对应列表格式 []
+hyper_parameters: ["reg_weight", "learning_rate", "lambda_mm", "alpha_v", "knn_k"]

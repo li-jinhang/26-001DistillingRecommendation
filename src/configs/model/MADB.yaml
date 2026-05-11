@@ -1,0 +1,28 @@
+# TMPZ-Align 模型配置文件 (包含多模态分布对齐与高斯分布建模逻辑)
+
+# 基础 Embedding 与 隐向量维度
+embedding_size: 64         # 最终输出的 Embedding 维度
+feat_embed_dim: 64         # 模态特征投影后的维度
+dim_latent: 64             # GCN 传播及分布对齐空间的隐维度 (对应代码中的 self.dim_latent)
+
+# KNN 物品图构建相关参数
+knn_k: 10                  # KNN 图中每个节点的邻居数，用于构建 mm_adj (self.knn_k)
+mm_image_weight: 0.1       # 融合 V 和 T 邻接矩阵时视觉特征的权重 (self.mm_image_weight)
+n_mm_layers: 1             # 物品-物品图 (Item-Item) 上的传播层数 (self.n_layers)
+
+# 基础 GCN 层数
+n_layers: 2                # 用户-物品交互图上的卷积层数 (ID, 视觉, 文本三路 GCN 分别执行)
+
+# 训练及对齐损失相关参数
+learning_rate: [0.0001]
+reg_weight: [0.001]        # L2 正则化权重，用于用户偏好及模态权重 (self.reg_weight)
+align_weight: [0.01]       # 多模态分布对齐损失 (KL 散度) 的权重 (self.align_weight)
+dropout: 0.2               # Dropout 概率 (self.dropout)
+temp: 1.0                  # 温度参数 (self.temp)
+
+# 分布建模空间维度 (可选，通常与 dim_latent 保持一致)
+dist_dim: 64               # 高斯分布均值和方差向量的维度
+
+# 超参数搜索列表
+# 将对齐损失权重 align_weight 加入搜索列表以优化模型表现
+hyper_parameters: ["reg_weight", "learning_rate", "align_weight"]

@@ -1,0 +1,22 @@
+# Core
+torch==2.1.0
+torchvision
+numpy
+scipy
+
+# Graph / multimodal recommendation related
+torch-geometric
+torch-scatter
+
+# Data and config
+pandas
+PyYAML
+lmdb
+
+# Utils
+tqdm
+matplotlib
+Pillow
+
+# Testing
+pytest

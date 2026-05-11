@@ -1,0 +1,34 @@
+# 基础特征与嵌入维度
+embedding_size: 64
+feat_embed_dim: 64
+
+# ALLB 架构相关参数 (学生与教师共有)
+n_mm_layers: 1      # 物品跨模态图传播层数
+n_layers: 2         # GCN 卷积层数
+knn_k: 10           # kNN 图的邻居数
+mm_image_weight: 0.1 # 图像模态权重 (1-w 为文本权重)
+
+# 教师模型配置 (统一修改为 ALLB)
+teacher1_model: 'ALLB'
+teacher1_weight: 'ALLB-baby-Apr-24-2026-11-52-50.pth' # 请替换为实际的 ALLB 权重文件名
+
+teacher2_model: 'ALLB'
+teacher2_weight: 'ALLB-baby-Apr-24-2026-12-08-48.pth' # 请替换为实际的 ALLB 权重文件名
+
+# 蒸馏核心超参数 (对应 KDC 修改后的代码)
+temp: [0.2]          # CE 蒸馏的温度系数
+alpha_hinge: [1.0]   # Hinge 蒸馏损失权重
+beta_ce: [1.0]      # Cross-Entropy 蒸馏损失权重
+
+# 学习与正则化
+learning_rate: [0.0001]
+reg_weight: [0.001]
+dropout: [0.1]
+
+# ALLB 内部对齐任务参数 (由 KDC 继承)
+align_weight: [0.1]
+use_global_align: True
+use_local_align: True
+
+# 调参任务列表
+hyper_parameters: ["reg_weight", "learning_rate", "temp", "alpha_hinge", "beta_ce"]

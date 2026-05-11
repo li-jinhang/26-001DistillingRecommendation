@@ -1,0 +1,23 @@
+# TMPA 模型配置文件 (已移除粗粒度对齐逻辑)
+
+# 基础 Embedding 维度 (对应代码中的 dim_latent)
+embedding_size: 64
+feat_embed_dim: 64
+
+# KNN 物品图构建相关参数
+knn_k: 10                  # KNN 图中每个节点的邻居数 (self.knn_k)
+mm_image_weight: 0.1       # 融合 V 和 T 邻接矩阵时视觉特征的权重 (self.mm_image_weight)
+n_mm_layers: 1             # 物品图上的传播层数 (对应 buildItemGraph 中的 self.n_layers)
+
+# 基础 GCN 层数
+n_layers: 2                # 交互图上的卷积层数
+
+# 训练相关参数
+learning_rate: [0.0001]
+reg_weight: [0.001]        # L2 正则化权重 (self.reg_weight)
+dropout: 0.2               # Dropout 概率 (对应代码中的 self.dropout)
+temp: 1.0                  # 温度参数 (对应代码中的 self.temp)
+
+# 超参数搜索列表
+# 已剔除对比学习相关的 mask_weight_f, mask_weight_g 以及 粗粒度对齐相关的 align_weight
+hyper_parameters: ["reg_weight", "learning_rate"]

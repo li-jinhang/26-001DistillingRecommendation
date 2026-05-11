@@ -1,0 +1,21 @@
+# 基础嵌入维度
+embedding_size: 64      # ID嵌入维度
+feat_embed_dim: 64      # 多模态特征映射后的统一维度
+
+# 图构建与超图卷积配置
+knn_k: 10               # 物品同构图构建时的近邻数
+n_layers: 2             # 物品图传播层数
+# 超图卷积层数（通常为1-2层效果较好）
+n_hyper_layers: 1 
+
+# 训练超参数设置 (使用列表格式以便进行 Grid Search)
+learning_rate: [0.0001]
+reg_weight: [0.0001]      # L2正则化权重
+dropout: [0.2]                    # 训练丢弃率
+
+# 多模态超边对比学习 (InfoNCE) 相关配置
+lambda_cl: [0.1]             # 对比学习损失权重 (对应代码中的 align_weight)
+temp: [0.5]                  # 对比学习温度系数
+
+# 自动调参列表
+hyper_parameters: ["reg_weight", "learning_rate", "dropout", "lambda_cl", "temp"]
