@@ -27,8 +27,9 @@ dropout: [0.1]
 
 # ALLB 内部对齐任务参数 (由 KDC 继承)
 align_weight: [0.1]
+adapter_weight: [0.1]
 use_global_align: True
 use_local_align: True
 
 # 调参任务列表
-hyper_parameters: ["reg_weight", "learning_rate", "temp", "alpha_hinge", "beta_ce"]
+hyper_parameters: ["reg_weight", "learning_rate", "temp", "alpha_hinge", "beta_ce", "adapter_weight"]

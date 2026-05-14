@@ -13,11 +13,20 @@ try:
 except ImportError:
     module = types.ModuleType('torch_scatter')
     def scatter_max(src, index, dim=-1, out=None, dim_size=None, fill_value=None):
+        if dim < 0:
+            dim = src.dim() + dim
         if dim_size is None:
             dim_size = int(index.max()) + 1
-        index_expanded = index.unsqueeze(-1).expand_as(src)
-        out = torch.zeros((dim_size, src.size(-1)), dtype=src.dtype, device=src.device)
-        out.scatter_reduce_(dim, index_expanded, src, reduce='amax', include_self=False)
+        if fill_value is None:
+            fill_value = torch.finfo(src.dtype).min if src.is_floating_point() else torch.iinfo(src.dtype).min
+        if out is None:
+            out_shape = list(src.shape)
+            out_shape[dim] = dim_size
+            out = torch.full(out_shape, fill_value, dtype=src.dtype, device=src.device)
+        view_shape = [1] * src.dim()
+        view_shape[dim] = index.shape[0]
+        index_expanded = index.view(view_shape).expand_as(src)
+        out.scatter_reduce_(dim, index_expanded, src, reduce='amax', include_self=True)
         return out, None
     module.scatter_max = scatter_max
     sys.modules['torch_scatter'] = module
@@ -33,10 +42,26 @@ from torch_geometric.utils import remove_self_loops, degree
 from common.loss import BPRLoss, EmbLoss
 
 
-class KDD(GeneralRecommender):
+class TeacherWeightAgent(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_dim=64):
+        super(TeacherWeightAgent, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, action_dim)
+        )
+        self.log_std = nn.Parameter(torch.zeros(action_dim))
+
+    def forward(self, state):
+        mu = self.net(state)
+        std = torch.clamp(self.log_std.exp(), min=1e-3, max=1.0).expand_as(mu)
+        dist = torch.distributions.Normal(mu, std)
+        return dist
+
+class KDJ(GeneralRecommender):
     def __init__(self, config, dataset):
         # 初始化学生模型 (继承 ALLB，即学生自身使用 ALLB 架构)
-        super(KDD, self).__init__(config, dataset)
+        super(KDJ, self).__init__(config, dataset)
         # ==========================================
         # 1. 蒸馏相关的超参数 (新增动态权重)
         # ==========================================
@@ -64,6 +89,9 @@ class KDD(GeneralRecommender):
         self.align_weight = config.get('align_weight', 0.1)
         if isinstance(self.align_weight, list):
             self.align_weight = self.align_weight[0]
+        self.adapter_weight = config.get('adapter_weight', 0.1)
+        if isinstance(self.adapter_weight, list):
+            self.adapter_weight = self.adapter_weight[0]
         self.use_global_align = config.get('use_global_align', True)
         self.use_local_align = config.get('use_local_align', True)
 
@@ -140,6 +168,24 @@ class KDD(GeneralRecommender):
         self.teacher2.eval()
         for param in self.teacher2.parameters():
             param.requires_grad = False
+
+        # ==========================================
+        # 3. 初始化强化学习智能体与 Adapter
+        # ==========================================
+        self.state_dim = (self.dim_latent * 2 + 4) * 2 # 2 teachers, each has user_rep, diff, loss, cos_sim, kl
+        self.action_dim = 2
+        self.rl_agent = TeacherWeightAgent(self.state_dim, self.action_dim).to(self.device)
+
+        self.adapter_t1 = nn.Sequential(
+            nn.Linear(self.dim_latent * 2, self.dim_latent * 2),
+            nn.ReLU(),
+            nn.Linear(self.dim_latent * 2, self.dim_latent * 2)
+        ).to(self.device)
+        self.adapter_t2 = nn.Sequential(
+            nn.Linear(self.dim_latent * 2, self.dim_latent * 2),
+            nn.ReLU(),
+            nn.Linear(self.dim_latent * 2, self.dim_latent * 2)
+        ).to(self.device)
 
     def get_knn_adj_mat(self, mm_embeddings):
         # 仿照 MENTOR 释放相似度矩阵，缓解大规模物品的 OOM 问题
@@ -279,44 +325,99 @@ class KDD(GeneralRecommender):
         with torch.no_grad():
             t1_pos, t1_neg = self.teacher1.forward(interaction.clone())
             t2_pos, t2_neg = self.teacher2.forward(interaction.clone())
+            
+            u_t1 = self.teacher1.result_embed[user]
+            u_t2 = self.teacher2.result_embed[user]
 
         s_diff = pos_scores - neg_scores
         t1_diff = t1_pos - t1_neg
         t2_diff = t2_pos - t2_neg
 
         # ==========================================
-        # 4. 动态权重计算：基于教师的样本级 BPR Loss
+        # 4. 提取特征构建 State 并采样 Action
         # ==========================================
+        s_loss_sample = -F.logsigmoid(s_diff)
         t1_loss_sample = -F.logsigmoid(t1_diff)
         t2_loss_sample = -F.logsigmoid(t2_diff)
 
-        # 在 batch 维度拼接负损失
-        stacked_teacher_losses = torch.stack([-t1_loss_sample, -t2_loss_sample], dim=1)
-        teacher_weights = F.softmax(stacked_teacher_losses, dim=1)
-        w1 = teacher_weights[:, 0]
-        w2 = teacher_weights[:, 1]
+        s_user_emb = self.result_embed[user]
+        s_user_aligned_t1 = self.adapter_t1(s_user_emb)
+        s_user_aligned_t2 = self.adapter_t2(s_user_emb)
+
+        with torch.no_grad():
+            cos_sim_t1 = F.cosine_similarity(s_user_aligned_t1, u_t1, dim=-1)
+            cos_sim_t2 = F.cosine_similarity(s_user_aligned_t2, u_t2, dim=-1)
+
+            p_s = torch.sigmoid(s_diff / self.temp)
+            p_t1 = torch.sigmoid(t1_diff / self.temp)
+            p_t2 = torch.sigmoid(t2_diff / self.temp)
+
+            eps = 1e-8
+            kl_t1 = p_t1 * torch.log((p_t1 + eps) / (p_s + eps)) + (1 - p_t1) * torch.log((1 - p_t1 + eps) / (1 - p_s + eps))
+            kl_t2 = p_t2 * torch.log((p_t2 + eps) / (p_s + eps)) + (1 - p_t2) * torch.log((1 - p_t2 + eps) / (1 - p_s + eps))
+
+            state_t1 = torch.cat([
+                u_t1,
+                t1_diff.unsqueeze(1),
+                t1_loss_sample.unsqueeze(1),
+                cos_sim_t1.unsqueeze(1),
+                kl_t1.unsqueeze(1)
+            ], dim=1)
+
+            state_t2 = torch.cat([
+                u_t2,
+                t2_diff.unsqueeze(1),
+                t2_loss_sample.unsqueeze(1),
+                cos_sim_t2.unsqueeze(1),
+                kl_t2.unsqueeze(1)
+            ], dim=1)
+
+            state = torch.cat([state_t1, state_t2], dim=1)
+
+        action_dist = self.rl_agent(state)
+        action = action_dist.sample()
+        log_prob = action_dist.log_prob(action).sum(dim=-1)
+
+        # 动作转化为非负且和为1的权重向量
+        weights = F.softmax(action, dim=-1)
+        w1 = weights[:, 0]
+        w2 = weights[:, 1]
 
         # ==========================================
-        # 5. 动态加权的 Hinge 蒸馏损失
+        # 5. 加权的蒸馏损失
         # ==========================================
         hinge_loss_1_sample = torch.clamp(t1_diff - s_diff, min=0.0)
         hinge_loss_2_sample = torch.clamp(t2_diff - s_diff, min=0.0)
         hinge_loss = self.alpha_hinge * torch.mean(w1 * hinge_loss_1_sample + w2 * hinge_loss_2_sample)
 
-        # ==========================================
-        # 6. 动态加权的 Cross Entropy 蒸馏损失
-        # ==========================================
         t1_bar = torch.sigmoid(t1_diff / self.temp)
         t2_bar = torch.sigmoid(t2_diff / self.temp)
         s_bar = torch.sigmoid(s_diff / self.temp)
-        eps = 1e-8
 
         ce_loss_1_sample = -(t1_bar * torch.log(s_bar + eps) + (1 - t1_bar) * torch.log(1 - s_bar + eps))
         ce_loss_2_sample = -(t2_bar * torch.log(s_bar + eps) + (1 - t2_bar) * torch.log(1 - s_bar + eps))
         ce_loss = self.beta_ce * torch.mean(w1 * ce_loss_1_sample + w2 * ce_loss_2_sample)
 
-        # 最终损失：基础损失 + 蒸馏损失
-        return student_base_loss + hinge_loss + ce_loss
+        total_distill_loss = hinge_loss + ce_loss
+
+        # ==========================================
+        # 6. 计算 Adapter 损失与 RL 策略损失
+        # ==========================================
+        # 师生对比损失 (即 Adapter 的均方误差)
+        adapter_loss = F.mse_loss(s_user_aligned_t1, u_t1.detach()) + \
+                       F.mse_loss(s_user_aligned_t2, u_t2.detach())
+
+        # 奖励设计：加权后的蒸馏损失和师生对比损失的总和取负值
+        reward = - (w1 * hinge_loss_1_sample + w2 * hinge_loss_2_sample +
+                    w1 * ce_loss_1_sample + w2 * ce_loss_2_sample).detach()
+
+        # Baseline
+        reward = (reward - reward.mean()) / (reward.std() + 1e-8)
+
+        rl_loss = -torch.mean(log_prob * reward)
+
+        # 最终损失
+        return student_base_loss + total_distill_loss + rl_loss + self.adapter_weight * adapter_loss
 
 class GCN(torch.nn.Module):
     def __init__(self, num_user, num_item, aggr_mode, dim_latent=64, device=None, features=None):

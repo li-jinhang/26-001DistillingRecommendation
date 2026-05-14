@@ -20,7 +20,7 @@ dropout: 0.2               # 丢弃率，用于防止 GCN 过拟合
 reg_weight: [0.001]        # L2 正则化权重，作用于 ID 偏好向量、模态权重参数 weight_u
 
 # 对齐任务控制开关 (Ablation 控制)
-use_global_align: True     # 是否开启全局分布对齐 (TMPA 策略)
+use_global_align: False     # 是否开启全局分布对齐 (TMPA 策略)
 use_local_align: True      # 是否开启细粒度兴趣对齐 (MADH 策略)
 
 # 混合对齐权重 (Hybrid Alignment Weight)
